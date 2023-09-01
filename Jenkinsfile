@@ -1,8 +1,10 @@
 pipeline {
-    agent any
-    tools{
-        maven 'maven_3_5_0'
+    agent {
+    docker {
+      image 'abhishekf5/maven-abhishek-docker-agent:v1'
+      args '--user root -v /var/run/docker.sock:/var/run/docker.sock' // mount Docker socket to access the host's Docker daemon
     }
+  }
     stages{
         stage('Build Maven'){
             steps{
@@ -10,28 +12,26 @@ pipeline {
                 sh 'mvn clean install'
             }
         }
-        stage('Build docker image'){
-            steps{
-                script{
-                    sh 'docker build -t javatechie/devops-integration .'
+        stage('Build and Push Docker Image') {
+          environment {
+            DOCKER_IMAGE = "arunkumar90322/cicd:latest"
+        // DOCKERFILE_LOCATION = "java-maven-sonar-argocd-helm-k8s/spring-boot-app/Dockerfile"
+            REGISTRY_CREDENTIALS = credentials('docker-cred')
+          }
+          steps {
+            script {
+                sh 'cd java-maven-sonar-argocd-helm-k8s/spring-boot-app && docker build -t ${DOCKER_IMAGE} .'
+                def dockerImage = docker.image("${DOCKER_IMAGE}")
+                docker.withRegistry('https://index.docker.io/v1/', "docker-cred") {
+                    dockerImage.push()
                 }
             }
-        }
-        stage('Push image to Hub'){
-            steps{
-                script{
-                   withCredentials([string(credentialsId: 'dockerhub-pwd', variable: 'dockerhubpwd')]) {
-                   sh 'docker login -u javatechie -p ${dockerhubpwd}'
-
-}
-                   sh 'docker push javatechie/devops-integration'
-                }
-            }
+          }
         }
         stage('Deploy to k8s'){
             steps{
                 script{
-                    kubernetesDeploy (configs: 'deploymentservice.yaml',kubeconfigId: 'k8sconfigpwd')
+                    kubernetesDeploy (configs: 'deploymentservice.yaml',kubeconfigId: 'kubeconfig')
                 }
             }
         }
